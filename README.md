@@ -1,11 +1,102 @@
-# Wono
+# Wono: pay with anything, get USDC on Solana
 
-Cross-chain checkout that settles native USDC on Solana. A merchant creates an invoice
-("20 USDC"). The customer connects the wallets they already have and covers it with any
-mix of supported tokens on Solana and EVM chains. Aurora Intents routes each share to the
-merchant's Solana wallet; Wono verifies the credit on-chain before calling it paid.
+**We Only Need One.** One button, one signature, any token on any chain, and the merchant
+gets native USDC on Solana. **Live on Solana mainnet.**
 
-Domain: [wonopay.vercel.app](https://wonopay.vercel.app). TypeScript monorepo (npm workspaces):
+- **Live demo:** [wonopay-store.vercel.app](https://wonopay-store.vercel.app), an example store built with the Wono SDK
+- **Wono app:** [wonopay.vercel.app](https://wonopay.vercel.app)
+- **Demo video:** [youtu.be/1nxeOwq1Cv8](https://youtu.be/1nxeOwq1Cv8)
+
+## The problem
+
+A merchant wants USDC on Solana. The customer's money is spread across chains: a little ETH
+on Base, some SOL, a few dollars of USDC on Polygon. No single token covers the bill. To pay,
+they swap on one app, bridge on another, find gas on every chain, then paste an address and
+hope it is right. Three apps, three fees, and most customers give up.
+
+## The solution
+
+Wono is a checkout the merchant drops into their page. The customer connects the wallet
+they already have, sees every balance on every supported chain, ticks the tokens they want
+to spend, and Wono splits the price across them. Solana tokens go out in **one
+transaction**; EVM tokens take one approval per wallet. **Aurora Intents** swaps and bridges
+everything that is not already USDC on Solana. Wono marks the invoice paid only after it
+verifies the finalized USDC credit on Solana, and the money lands in the merchant's own
+wallet. Wono never holds funds.
+
+## Live on mainnet
+
+Real payments, made through the live checkout, each $1.00 split as 0.50 USDC + 0.50 of SOL
+and sent in a single Solana transaction:
+
+| Invoice | Transaction |
+| --- | --- |
+| `inv_FOhQOBuZGsRVW8Xc` | [3LvKKvj3…RKS3y](https://solscan.io/tx/3LvKKvj3TamWS9oy2m8oxyhAGfdbB5uczDA32afWcAnQv4eeGYZndgK16kHrC3grAjiGsqYzv63JXgtKuJsRKS3y) |
+| `inv_kVzgEg28W31ik3wM` | [4uqVjdtD…56H4t6](https://solscan.io/tx/4uqVjdtDfLeqUw7YeXqrfKwX6rir9msT5EqTGeSHCZSzTV6m8FQyWGPuhUYohjQRodtsCo4dfSnUZBxoMY56H4t6) |
+| `inv_m1X9-4wNLmTyyGpw` | [5nUntA4t…kB9xo](https://solscan.io/tx/5nUntA4tekyt1nBHEnz9fJDqGUMv2oAbj2WNHJBAYVL1AmDFihtCYHP6rJm5Y7z1ctQb5EhFBhzP9pNMYF1kB9xo) |
+
+## See it work
+
+| | |
+| --- | --- |
+| ![Example store](docs/images/1-store.png) **1. A store built with the SDK.** Click buy. | ![Pick tokens](docs/images/2-pick-tokens.png) **2. The Wono modal opens on the same page.** Real balances on every chain; tick SOL next to USDC and the dollar splits 0.50 / 0.50. |
+| ![One signature](docs/images/3-one-signature.png) **3. One signature.** Phantom shows exactly what leaves the wallet: 0.5 USDC and 0.005767 SOL, one Solana transaction. | ![Routing](docs/images/4-routing.png) **4. Prices locked, routes reserved with Aurora.** USDC lands directly; SOL is swapped to USDC. |
+| ![Paid](docs/images/5-paid.png) **5. Paid, verified on Solana.** The store unlocks the download only after its server re-reads the invoice. | ![Receipt](docs/images/6-receipt.png) **6. Receipt.** Both tokens, one transaction, Solscan links. |
+
+![Solscan](docs/images/7-solscan.png)
+
+## Add it to your site
+
+No account and no API key: payments go straight to your Solana wallet.
+
+```tsx
+import { Pay } from "@wono/react";
+
+<Pay to="YOUR_SOLANA_WALLET" amount="10" description="Pro plan" />
+```
+
+Before unlocking anything, check on your server:
+
+```ts
+import { getInvoice, isPaidTo } from "@wono/sdk";
+
+const invoice = await getInvoice(id, { refresh: true });
+if (isPaidTo(invoice, { to: WALLET, amount: "10" })) unlock();
+```
+
+Merchants who want a dashboard, API keys, analytics and embed origins sign up on the app.
+AI agents and APIs can charge per call over HTTP 402 with `@wono/x402`.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Merchant site
+    S[Store page] -->|"&lt;Pay&gt; / WonoCheckout"| M[Wono modal iframe]
+  end
+  M -->|connect, balances, quotes| W[Wono app on Vercel]
+  W -->|quote per token, bound to recipient, amount, deadline| A[Aurora Intents]
+  W <-->|invoices, routes, settlements| DB[(MongoDB Atlas)]
+  M -->|one signature| P[Customer wallet: Phantom, MetaMask ...]
+  P -->|USDC direct| SOL[Solana: merchant USDC account]
+  P -->|SOL, ETH, POL ...| A
+  A -->|swap and bridge to USDC| SOL
+  W -->|verify finalized credit, once per signature| SOL
+  S -->|server: getInvoice + isPaidTo| W
+```
+
+- **Bound quotes.** Each Aurora quote is checked against the requested asset, recipient,
+  amount, refund address, deadline and deposit route, and saved before the customer signs.
+- **Paid means on-chain.** An invoice is paid only after a finalized Solana credit of the
+  invoice mint to the merchant, recorded once per signature (unique index). Iframe events and
+  return URLs never mark anything paid.
+- **Honest states.** Open, partial, paid, failed, refunded and expired stay distinct; a short
+  or failed part keeps the invoice partial, and nothing is ever resent automatically.
+- **Storage.** MongoDB Atlas with transactions for every money write; deployed on Vercel.
+
+## Repository
+
+TypeScript monorepo (npm workspaces):
 
 | Path | What |
 | --- | --- |
