@@ -1,0 +1,16 @@
+@import "../styles/globals.css";
+
+/*
+ * Wono product tokens. Everything is a multiple of the 4px unit that Tailwind's
+ * spacing scale already uses (1 = 4px). Views use Tailwind spacing utilities and
+ * BoardUI composite type utilities only; these tokens name the few shared sizes.
+ */
+@theme {
+  --spacing: 4px;
+  --spacing-control: calc(var(--spacing) * 9);   /* BoardUI medium control: 36px */
+  --spacing-sidebar: calc(var(--spacing) * 65);  /* 260px */
+  --spacing-content: calc(var(--spacing) * 240); /* 960px max content */
+  --spacing-checkout: calc(var(--spacing) * 115); /* 460px checkout column */
+  --spacing-form: calc(var(--spacing) * 140);    /* 560px form column */
+  --spacing-pay: calc(var(--spacing) * 180);     /* 720px pay modal height */
+}
