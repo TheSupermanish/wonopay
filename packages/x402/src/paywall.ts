@@ -1,7 +1,7 @@
 /**
  * Server side: put any Fetch-API route behind HTTP 402 with a Wono invoice.
  *
- *   const paid = wonoPaywall({ wono, price: "0.25", description: "Weather report" });
+ *   const paid = wonoPaywall({ wono, price: "1.00", description: "Weather report" });
  *   export const GET = paid(async (request, { invoice }) => Response.json(await report()));
  *
  * Works with Next.js route handlers, Hono (`(c) => handler(c.req.raw)`), Bun, Deno, and anything
@@ -33,7 +33,7 @@ export function memoryStore(): RedeemedStore {
 export interface PaywallOptions {
   /** Server-side Wono client (holds your secret key), or a function returning it so it is created on first call. */
   wono: WonoServer | (() => WonoServer);
-  /** USDC price per call as a decimal string, e.g. "0.25". */
+  /** USDC price per call as a decimal string, e.g. "1.00". Current minimum: 1 USDC. */
   price: string;
   description?: string;
   mimeType?: string;

@@ -1,11 +1,19 @@
-# Wono: pay with anything, get USDC on Solana
+# Wono: combine token balances, get paid in USDC on Solana
 
-**We Only Need One.** One button, one signature, any token on any chain, and the merchant
-gets native USDC on Solana. **Live on Solana mainnet.**
+**Your tokens can be scattered. Your checkout shouldn't be.**
+
+Wono lets customers combine supported token balances across Solana and EVM chains to pay
+one invoice. Merchants embed a checkout and receive native USDC in their own Solana wallet.
+Aurora Intents handles the required swaps and bridges; Solana USDC transfers directly.
+Transfers from one Solana wallet share one transaction and one signature. EVM transfers
+are approved individually. Mainnet transaction examples are linked below.
 
 - **Live demo:** [wonopay-store.vercel.app](https://wonopay-store.vercel.app), an example store built with the Wono SDK
 - **Wono app:** [wonopay.vercel.app](https://wonopay.vercel.app)
 - **Demo video:** [youtu.be/1nxeOwq1Cv8](https://youtu.be/1nxeOwq1Cv8)
+
+Built for the [MLH Solana Hackathon](https://www.mlh.com/events/solana-hackathon),
+November 6–8, 2026. The payment checkout fits the DeFi track.
 
 ## The problem
 
@@ -19,7 +27,7 @@ hope it is right. Three apps, three fees, and most customers give up.
 Wono is a checkout the merchant drops into their page. The customer connects the wallet
 they already have, sees every balance on every supported chain, ticks the tokens they want
 to spend, and Wono splits the price across them. Solana tokens go out in **one
-transaction**; EVM tokens take one approval per wallet. **Aurora Intents** swaps and bridges
+transaction**; EVM tokens take one approval per transfer. **Aurora Intents** swaps and bridges
 everything that is not already USDC on Solana. Wono marks the invoice paid only after it
 verifies the finalized USDC credit on Solana, and the money lands in the merchant's own
 wallet. Wono never holds funds.
@@ -63,6 +71,10 @@ import { getInvoice, isPaidTo } from "@wono/sdk";
 const invoice = await getInvoice(id, { refresh: true });
 if (isPaidTo(invoice, { to: WALLET, amount: "10" })) unlock();
 ```
+
+Keep the invoice ID bound to the order on your server, and fulfil each paid invoice only
+once. `isPaidTo` checks payment status, recipient and amount; it does not establish order
+ownership or prevent an already-paid invoice from being reused.
 
 Merchants who want a dashboard, API keys, analytics and embed origins sign up on the app.
 AI agents and APIs can charge per call over HTTP 402 with `@wono/x402`.
@@ -149,9 +161,13 @@ Requires Node ≥ 22.18 (native TypeScript for tests) and a MongoDB replica set 
      ≥ 0.01 SOL: Wono's wallet is the fee payer and pays any token-account rent. The customer
      signs only their transfers; Wono co-signs a message only after checking it matches the
      prepared transfer, and refuses wallet-added priority fees above 1 lamport/CU.
-   - Solana: all shares from one wallet in **one transaction**, signed with
-     `solana:signTransaction`; Wono checks the signed bytes match, stores the signature
+   - Solana: all shares from one wallet in **one transaction**, including a unique
+     invoice/batch memo, signed with `solana:signTransaction`; Wono checks the transfers,
+     invoice reference and prepared blockhash match, stores the signature
      and bytes, *then* broadcasts. Rebroadcasting identical bytes cannot pay twice.
+     Hash-only wallet results are accepted only for `signAndSendTransaction`; direct
+     USDC credit also requires verifying that transaction's signed bytes against the
+     prepared invoice/batch before settlement is credited.
    - EVM: switch network, then `eth_sendTransaction` (ERC-20 `transfer` or native value).
 8. **Track.** `POST /api/pay/:id/refresh` reconciles: Aurora status (bound to the saved
    quote signature, deposit address, and request), source-chain receipts/signatures, then
@@ -243,9 +259,11 @@ Server: wrap any Fetch-API handler (Next.js route, Hono `c.req.raw`, Bun, Deno).
 ```ts
 import { wonoPaywall } from "@wono/x402";
 
-const paid = wonoPaywall({ wono: () => new Wono({ apiKey: process.env.WONO_API_KEY! }), price: "0.25", description: "Weather report" });
+const paid = wonoPaywall({ wono: () => new Wono({ apiKey: process.env.WONO_API_KEY! }), price: "1.00", description: "Weather report" });
 export const GET = paid(async (request, { invoice }) => Response.json(await report()));
 ```
+
+The current invoice minimum is 1 USDC, including API payments.
 
 The paywall creates an invoice whose reference is bound to the resource URL, answers 402 with it,
 and on retry releases the handler only when Wono reports the invoice `paid` and it has not been
@@ -298,19 +316,23 @@ check of `GET /api/v1/invoices/:id?refresh=1`. The order shows paid only when th
 `state: "paid"`. Options: `WONO_URL`, `STORE_PORT`, `STORE_ORIGIN`, `STORE_PRODUCT`,
 `STORE_PRICE` (USDC, default 1.00).
 
-## Verified vs. not verified
+## Verification scope
 
-Verified against live services (2026-11-05): Aurora token catalog (215 tokens; Solana USDC
+Historical live-service probes (2026-11-05): Aurora token catalog (215 tokens; Solana USDC
 asset ↔ mint check), dry and non-dry quotes for Base USDC, SOL, and Solana USDC into
 Solana USDC; status binding (`PENDING_DEPOSIT`); Solana batch transaction build from
 mainnet RPC; EVM transfer request; live balances on Solana and Base; Phantom detected via
 Wallet Standard and EIP-6963 in a real browser.
 
-Not verified: a funded payment. No transaction was signed or broadcast; real approval is
-left to the customer's wallet. Specifically unexercised: Aurora detecting an SPL deposit
-to the deposit address's token account, settlement on `SUCCESS` with real destination
-hashes, refunds, `INCOMPLETE_DEPOSIT` handling, and Aurora creating a merchant USDC
-account that does not exist yet.
+The mainnet examples above record funded, mixed SOL + Solana USDC payments. They do not
+establish that every supported token, EVM source chain or failure path has been tested
+with funds. The earlier probes alone establish quote and request behavior, not settlement.
+
+Further live validation is needed for funded EVM-to-Solana payments, refunds,
+`INCOMPLETE_DEPOSIT` handling, and Aurora creating a merchant USDC account that does not
+exist yet. During the 2026-11-08 audit, the first linked source transaction was independently
+found successful on Solana, but its public invoice endpoint returned 404; the deployed
+receipt therefore did not provide an independently checkable end-to-end settlement record.
 
 ## Limits
 

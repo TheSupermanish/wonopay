@@ -5,7 +5,7 @@ import {
   PublicKey,
   SystemProgram,
   Transaction,
-  type TransactionInstruction,
+  TransactionInstruction,
 } from "@solana/web3.js";
 import {
   createAssociatedTokenAccountIdempotentInstruction,
@@ -135,11 +135,20 @@ async function batchInstructions(specs: SolanaTransferSpec[], rentPayer: PublicK
   return (await Promise.all(specs.map((spec) => transferInstructions(spec, rentPayer)))).flat();
 }
 
+/** A signed, unique invoice/batch reference prevents a historical transfer being claimed. */
+function paymentMemo(reference: string): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
+    keys: [],
+    data: Buffer.from(reference, "utf8"),
+  });
+}
+
 /**
  * Build the batch. With `sponsor`, Wono's wallet is the fee payer and pays any account
  * rent; the customer signs only for their own transfers and Wono co-signs after checking.
  */
-export async function buildSolanaTransfer(specs: SolanaTransferSpec[], sponsor?: PublicKey): Promise<PreparedSolanaTransfer> {
+export async function buildSolanaTransfer(specs: SolanaTransferSpec[], reference: string, sponsor?: PublicKey): Promise<PreparedSolanaTransfer> {
   const spec = specs[0]!;
   const feePayer = sponsor ?? new PublicKey(spec.from);
   const instructions = await batchInstructions(specs, feePayer);
@@ -147,7 +156,7 @@ export async function buildSolanaTransfer(specs: SolanaTransferSpec[], sponsor?:
     { commitment: "finalized" },
   ]);
   const transaction = new Transaction({ feePayer, blockhash: value.blockhash, lastValidBlockHeight: value.lastValidBlockHeight });
-  transaction.add(...instructions);
+  transaction.add(...instructions, paymentMemo(reference));
   const size = transaction.serialize({ requireAllSignatures: false, verifySignatures: false }).length;
   if (size > 1100) throw new Error("Too many Solana sources for one transaction. Use fewer tokens.");
   return {
@@ -185,7 +194,13 @@ function computeUnitPrice(instructions: TransactionInstruction[]): bigint {
  * its own signature: it only ever signs a message it has checked, and caps the priority fee
  * a wallet may add at Wono's expense.
  */
-export async function checkSignedSolanaTransfer(signedBase64: string, specs: SolanaTransferSpec[], feePayer?: string): Promise<CheckedSolanaTransaction> {
+export async function checkSignedSolanaTransfer(
+  signedBase64: string,
+  specs: SolanaTransferSpec[],
+  preparedBase64: string,
+  reference: string,
+  feePayer?: string,
+): Promise<CheckedSolanaTransaction> {
   const spec = specs[0]!;
   const payer = feePayer ?? spec.from;
   let transaction: Transaction;
@@ -194,11 +209,15 @@ export async function checkSignedSolanaTransfer(signedBase64: string, specs: Sol
   } catch {
     throw new Error("The wallet returned a transaction Wono cannot read.");
   }
+  if (!preparedBase64) throw new Error("The prepared transaction is unavailable. Manual review required.");
+  const prepared = Transaction.from(Buffer.from(preparedBase64, "base64"));
+  if (transaction.recentBlockhash !== prepared.recentBlockhash) throw new Error("The signed transaction has a different blockhash.");
   if (transaction.feePayer?.toBase58() !== payer) throw new Error("The signed transaction has a different fee payer.");
   const customer = transaction.signatures.find((entry) => entry.publicKey.toBase58() === spec.from);
   if (!customer?.signature) throw new Error("The signed transaction is missing the wallet's signature.");
   if (!transaction.verifySignatures(false)) throw new Error("The signed transaction carries an invalid signature.");
   const expected = await batchInstructions(specs, new PublicKey(payer));
+  expected.push(paymentMemo(reference));
   const actual = transaction.instructions.filter((instruction) => !ALLOWED_EXTRA_PROGRAMS.has(instruction.programId.toBase58()));
   const same = (a: TransactionInstruction, b: TransactionInstruction) =>
     a.programId.equals(b.programId) &&

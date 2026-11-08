@@ -27,4 +27,17 @@ describe("solanaKeypairSigner", () => {
     const other = Keypair.generate().publicKey;
     await assert.rejects(signer.sign(build(other, SystemProgram.transfer({ fromPubkey: other, toPubkey: other, lamports: 1 }))), /not a signer/);
   });
+
+  it("signs an invoice memo alongside its transfer", async () => {
+    const memo = new TransactionInstruction({
+      programId: new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
+      keys: [],
+      data: Buffer.from("wono:inv_test:ctb_test"),
+    });
+    const transaction = new Transaction({ feePayer: keypair.publicKey, recentBlockhash: BLOCKHASH }).add(transfer, memo);
+    const unsigned = transaction.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
+    const signed = Transaction.from(Buffer.from(await signer.sign(unsigned), "base64"));
+    assert.ok(signed.verifySignatures(true));
+    assert.equal(signed.instructions[1]!.data.toString(), "wono:inv_test:ctb_test");
+  });
 });

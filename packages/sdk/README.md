@@ -31,4 +31,6 @@ const credit = await verifySolanaTokenCredit(createJsonRpc(solanaRpcUrl), {
 - `verifySolanaTokenCredit`: finalized, successful, net credit of mint to owner.
 - Amount helpers use bigint; `formatUnits` truncates and never rounds up.
 
-The SDK does not sign, send, store, or retry anything.
+The SDK never holds wallet private keys. The low-level clients above do not sign or send
+transactions. `WonoPay` coordinates the hosted checkout API and invokes your wallet-signing
+callback; Wono's server checks, persists and broadcasts the returned transaction.

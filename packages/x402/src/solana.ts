@@ -17,7 +17,7 @@ export const WONO_PAYMENT_PROGRAMS: readonly string[] = [
   "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", // SPL Token
   "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb", // Token-2022
   "ATokenGPvbdGVxr1b9hvZbsiqW5xWH25efTNsLJA8knL", // Associated token account
-  "MemoSq4gqABAXKb96qnH8TuNkiLgv1GVJR2tBCSmV8Ab", // Memo
+  "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr", // Memo
 ];
 
 export interface SolanaSigner {

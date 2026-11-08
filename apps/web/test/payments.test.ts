@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { ComputeBudgetProgram, Keypair, Transaction } from "@solana/web3.js";
+import { encodeBase58 } from "@wono/sdk";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 
 process.env.WONO_AURORA_API_KEY = "test-key";
@@ -21,6 +22,7 @@ const CUSTOMER_EVM = "0xae711a0bcdb064a7aefcd772282f50df639bdd6f";
 const quotes = new Map<string, any>(); // depositAddress -> quote response
 const statuses = new Map<string, { status: string; swapDetails?: any }>();
 const solanaTxs = new Map<string, any>(); // signature -> getTransaction result
+const solanaRawTxs = new Map<string, any>(); // signature -> base64 getTransaction result
 const landed = new Set<string>(); // signatures reported finalized by getSignatureStatuses
 const sent: string[] = [];
 let blockHeight = 1000;
@@ -73,6 +75,7 @@ function rpcResult(method: string, params: any[]): unknown {
     case "getSignatureStatuses":
       return { value: [landed.has(params[0][0]) ? { slot: 42, err: null, confirmationStatus: "finalized" } : null] };
     case "getTransaction":
+      if (params[1]?.encoding === "base64") return solanaRawTxs.get(params[0]) ?? null;
       return solanaTxs.get(params[0]) ?? null;
     case "eth_getTransactionReceipt":
       return { status: "0x1" };
@@ -342,7 +345,7 @@ describe("Solana batch", () => {
     const request = (await payments.requestApproval(ids, `${KEY}s`, payer, "signTransaction")) as any;
     assert.equal(request.kind, "solana");
     const tx = Transaction.from(Buffer.from(request.transaction, "base64"));
-    assert.equal(tx.instructions.length, 5, "1 SOL transfer + 2 × (create ATA + transferChecked)");
+    assert.equal(tx.instructions.length, 6, "1 SOL transfer + 2 × (create ATA + transferChecked) + invoice memo");
     assert.ok((await parts(invoice.id)).every((part) => part.state === "awaiting_approval"));
 
     tx.sign(CUSTOMER_SOL);
@@ -388,7 +391,7 @@ describe("direct USDC", () => {
 
     const request = (await payments.requestApproval([part!.id], `${KEY}d`, payer, "signTransaction")) as any;
     const tx = Transaction.from(Buffer.from(request.transaction, "base64"));
-    assert.equal(tx.instructions.length, 2, "create merchant ATA (idempotent) + transferChecked");
+    assert.equal(tx.instructions.length, 3, "create merchant ATA (idempotent) + transferChecked + invoice memo");
     tx.sign(CUSTOMER_SOL);
     await payments.reportOutcome([part!.id], `${KEY}d`, { type: "solana_signed", signedTransaction: tx.serialize().toString("base64") });
     const signature = (await parts(invoice.id))[0]!.tx_hash!;
@@ -423,6 +426,118 @@ describe("direct USDC", () => {
     await payments.reconcileInvoice(invoice.id);
     assert.equal((await parts(invoice.id))[0]!.state, "unknown");
     assert.equal((await invoices.invoiceView((await invoices.invoiceRow(invoice.id))!, "Orbit")).credited, "0");
+  });
+});
+
+describe("invoice-bound Solana payments", () => {
+  async function prepare(method: "signTransaction" | "signAndSendTransaction" = "signTransaction") {
+    const invoice = await newInvoice("3");
+    const key = `${KEY}_${invoice.id}`;
+    const payer = CUSTOMER_SOL.publicKey.toBase58();
+    await payments.createAttempt(invoice.id, key, [{ assetId: SOL_USDC, amountOut: "3000000", sourceAddress: payer }]);
+    const [part] = await parts(invoice.id);
+    const request = await payments.requestApproval([part!.id], key, payer, method);
+    assert.equal(request.kind, "solana");
+    if (request.kind !== "solana") throw new Error("Expected Solana transaction");
+    return { invoice, key, id: part!.id, tx: Transaction.from(Buffer.from(request.transaction, "base64")) };
+  }
+
+  it("refuses a hash-only outcome for a signTransaction payment", async () => {
+    const payment = await prepare();
+    const oldSignature = "1".repeat(64);
+    landed.add(oldSignature);
+    solanaTxs.set(oldSignature, settlementTx("3000000"));
+    await assert.rejects(
+      payments.reportOutcome([payment.id], payment.key, { type: "sent", txHash: oldSignature }),
+      /requires the signed transaction bytes/,
+    );
+    assert.notEqual((await payments.reconcileInvoice(payment.invoice.id)).state, "paid");
+    assert.equal((await invoices.invoiceRow(payment.invoice.id))!.credited, "0");
+    assert.equal(sent.length, 0);
+  });
+
+  it("rejects another invoice's signed transfer even with the prepared blockhash", async () => {
+    const old = await prepare();
+    const current = await prepare();
+    old.tx.recentBlockhash = current.tx.recentBlockhash;
+    old.tx.sign(CUSTOMER_SOL);
+    await payments.reportOutcome([current.id], current.key, { type: "solana_signed", signedTransaction: old.tx.serialize().toString("base64") });
+    const [part] = await parts(current.invoice.id);
+    assert.equal(part!.state, "unknown");
+    assert.match(part!.detail!, /does not match the prepared transfer/);
+    assert.equal((await invoices.invoiceRow(current.invoice.id))!.credited, "0");
+    assert.equal(sent.length, 0);
+  });
+
+  it("rejects a wallet replacing the prepared blockhash", async () => {
+    const payment = await prepare();
+    payment.tx.recentBlockhash = Keypair.generate().publicKey.toBase58();
+    payment.tx.sign(CUSTOMER_SOL);
+    await payments.reportOutcome([payment.id], payment.key, { type: "solana_signed", signedTransaction: payment.tx.serialize().toString("base64") });
+    const [part] = await parts(payment.invoice.id);
+    assert.equal(part!.state, "unknown");
+    assert.match(part!.detail!, /different blockhash/);
+    assert.equal(sent.length, 0);
+  });
+
+  it("rejects a historical credit reported by a signAndSendTransaction wallet", async () => {
+    const old = await prepare("signAndSendTransaction");
+    old.tx.sign(CUSTOMER_SOL);
+    const signature = encodeBase58(old.tx.signature!);
+    const raw = old.tx.serialize().toString("base64");
+    landed.add(signature);
+    solanaRawTxs.set(signature, { transaction: [raw, "base64"] });
+    solanaTxs.set(signature, settlementTx("3000000"));
+    const current = await prepare("signAndSendTransaction");
+    await payments.reportOutcome([current.id], current.key, { type: "sent", txHash: signature });
+    const result = await payments.reconcileInvoice(current.invoice.id);
+    assert.equal(result.state, "unknown");
+    assert.equal(result.credited, "0");
+    assert.equal(sent.length, 0);
+  });
+
+  it("still verifies an invoice-bound signAndSendTransaction payment", async () => {
+    const payment = await prepare("signAndSendTransaction");
+    payment.tx.sign(CUSTOMER_SOL);
+    const signature = encodeBase58(payment.tx.signature!);
+    const raw = payment.tx.serialize().toString("base64");
+    await payments.reportOutcome([payment.id], payment.key, { type: "sent", txHash: signature });
+    landed.add(signature);
+    solanaRawTxs.set(signature, { transaction: [raw, "base64"] });
+    solanaTxs.set(signature, settlementTx("3000000"));
+    const result = await payments.reconcileInvoice(payment.invoice.id);
+    assert.equal(result.state, "paid");
+    assert.equal(result.credited, "3000000");
+    await payments.reconcileInvoice(payment.invoice.id);
+    assert.equal((await invoices.invoiceRow(payment.invoice.id))!.credited, "3000000");
+  });
+
+  it("verifies the direct share of a mixed SOL and USDC batch", async () => {
+    const invoice = await newInvoice("3");
+    const key = `${KEY}_mixed`;
+    const payer = CUSTOMER_SOL.publicKey.toBase58();
+    await payments.createAttempt(invoice.id, key, [
+      { assetId: SOL_USDC, amountOut: "1000000", sourceAddress: payer },
+      { assetId: SOL, amountOut: "2000000", sourceAddress: payer },
+    ]);
+    const rows = await parts(invoice.id);
+    const ids = rows.map((part) => part.id);
+    const request = await payments.requestApproval(ids, key, payer, "signTransaction");
+    if (request.kind !== "solana") throw new Error("Expected Solana transaction");
+    const tx = Transaction.from(Buffer.from(request.transaction, "base64"));
+    tx.sign(CUSTOMER_SOL);
+    await payments.reportOutcome(ids, key, { type: "solana_signed", signedTransaction: tx.serialize().toString("base64") });
+    const signature = encodeBase58(tx.signature!);
+    landed.add(signature);
+    solanaTxs.set(signature, settlementTx("1000000"));
+    const partial = await payments.reconcileInvoice(invoice.id);
+    assert.equal(partial.credited, "1000000");
+    assert.notEqual(partial.state, "paid");
+    const routed = rows.find((part) => part.origin_asset === SOL)!;
+    succeed(routed.deposit_address!, "7".repeat(88), "2000000");
+    const paid = await payments.reconcileInvoice(invoice.id);
+    assert.equal(paid.state, "paid");
+    assert.equal(paid.credited, "3000000");
   });
 });
 

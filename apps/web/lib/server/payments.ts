@@ -308,6 +308,7 @@ export async function createAttempt(invoiceId: string, key: string, parts: unkno
           provider_json: null,
           tx_hash: null,
           signed_tx: null,
+          prepared_tx: null,
           last_valid_block_height: null,
           fee_payer: null,
           wallet_method: null,
@@ -382,6 +383,10 @@ function solanaSpecs(batch: Pick<AuthorizedBatch, "rows" | "quotes">): SolanaTra
   });
 }
 
+function solanaReference(batch: Pick<AuthorizedBatch, "rows" | "invoice">): string {
+  return `wono:${batch.invoice.id}:${batch.rows.map((row) => row.id).sort().join(",")}`;
+}
+
 export type WalletRequest =
   | { kind: "evm"; chainId: number; transaction: { from: string; to: string; value: string; data?: string } }
   | { kind: "solana"; method: "signTransaction" | "signAndSendTransaction"; transaction: string; lastValidBlockHeight: number; sponsored: boolean };
@@ -433,7 +438,7 @@ export async function requestApproval(
     const sponsor = method === "signTransaction" ? await availableSponsor() : undefined;
     let built;
     try {
-      built = await buildSolanaTransfer(solanaSpecs(batch), sponsor);
+      built = await buildSolanaTransfer(solanaSpecs(batch), solanaReference(batch), sponsor);
     } catch (error) {
       throw new UserError(error instanceof Error ? error.message : "Could not build the Solana transfer.", 422);
     }
@@ -456,7 +461,7 @@ export async function requestApproval(
     const time = now();
     const result = await (await col<ContributionRow>("contributions")).updateMany(
       { id: { $in: ids }, state: "quoted" },
-      { $set: { state: "awaiting_approval", approval_requested_at: time, wallet_method: method, last_valid_block_height: lastValid, fee_payer: feePayer, detail: null, updated_at: time } },
+      { $set: { state: "awaiting_approval", approval_requested_at: time, wallet_method: method, last_valid_block_height: lastValid, fee_payer: feePayer, prepared_tx: request.kind === "solana" ? request.transaction : null, detail: null, updated_at: time } },
       { session },
     );
     // All or nothing: a partially claimed batch is rolled back and never shown to the wallet.
@@ -509,7 +514,7 @@ export async function reportOutcome(contributionIds: unknown, key: string, outco
       if (first.chain !== "sol" || rows.some((row) => row.wallet_method !== "signTransaction")) throw new UserError("Unexpected signed transaction.", 409);
       let checked;
       try {
-        checked = await checkSignedSolanaTransfer(String(outcome.signedTransaction), solanaSpecs(batch), first.fee_payer ?? undefined);
+        checked = await checkSignedSolanaTransfer(String(outcome.signedTransaction), solanaSpecs(batch), first.prepared_tx ?? "", solanaReference(batch), first.fee_payer ?? undefined);
       } catch (error) {
         // Not broadcast by Wono. Resolved to expired once its blockhash can no longer land.
         await transition("unknown", { detail: error instanceof Error ? error.message : "Signed transaction rejected." }, ["awaiting_approval"]);
@@ -529,6 +534,9 @@ export async function reportOutcome(contributionIds: unknown, key: string, outco
       break;
     }
     case "sent": {
+      if (first.chain === "sol" && rows.some((row) => row.wallet_method !== "signAndSendTransaction")) {
+        throw new UserError("This Solana payment requires the signed transaction bytes, not a transaction hash.", 409);
+      }
       const hash = String(outcome.txHash ?? "");
       const valid = first.chain === "sol" ? /^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(hash) : /^0x[0-9a-fA-F]{64}$/.test(hash);
       if (!valid) throw new UserError("Invalid transaction hash.");
@@ -690,6 +698,35 @@ async function reconcileDirect(invoice: InvoiceRow, row: ContributionRow, update
   const status = await getSignatureState(rpc("sol"), row.tx_hash);
   if (status.status === "not_found" || status.status === "failed") {
     await reconcileSolanaSource(row, update, blockHeight);
+    return;
+  }
+  // A hash alone proves no association with this invoice. Validate the signed source
+  // transaction, including its unique invoice/batch memo, before accepting its credit.
+  const rows = await (await col<ContributionRow>("contributions")).find(
+    { invoice_id: invoice.id, attempt_id: row.attempt_id, chain: "sol", tx_hash: row.tx_hash }, NO_ID,
+  ).toArray();
+  let raw = row.signed_tx;
+  if (!raw) {
+    const tx = await rpc("sol").call<{ transaction?: [string, string] } | null>("getTransaction", [
+      row.tx_hash, { encoding: "base64", commitment: "finalized", maxSupportedTransactionVersion: 0 },
+    ]);
+    if (!tx) return; // Not finalized yet; keep the amount reserved.
+    raw = tx.transaction?.[0] ?? "";
+  }
+  try {
+    if (!rows.length || rows.some((part) => part.prepared_tx !== row.prepared_tx || part.source_address !== row.source_address)) {
+      throw new Error("The source transaction does not match the prepared batch.");
+    }
+    const quotes = rows.map((part) => {
+      const route = parseRoute(part.quote_json);
+      if (!route) throw new Error("The source transaction has no saved route.");
+      return route;
+    });
+    const batch = { rows, quotes, invoice };
+    const checked = await checkSignedSolanaTransfer(raw, solanaSpecs(batch), row.prepared_tx ?? "", solanaReference(batch), row.fee_payer ?? undefined);
+    if (checked.signature !== row.tx_hash) throw new Error("The source transaction has a different signature.");
+  } catch (error) {
+    await update("unknown", { detail: error instanceof Error ? error.message : "Source transaction does not match this invoice. Manual review required." });
     return;
   }
   if (row.state === "submitted" || row.state === "processing" || row.state === "unknown") await update("settled", { detail: null });

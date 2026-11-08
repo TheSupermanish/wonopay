@@ -57,6 +57,8 @@ export interface ContributionRow {
   provider_json: string | null;
   tx_hash: string | null;
   signed_tx: string | null;
+  /** Exact unsigned transaction shown to the wallet; absent on legacy contributions. */
+  prepared_tx?: string | null;
   last_valid_block_height: number | null;
   fee_payer: string | null;
   wallet_method: string | null;
