@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.tgz
+.env
+.env.*
+!.env.example
+.DS_Store
+.next/
+out/
+.data/
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+.env*

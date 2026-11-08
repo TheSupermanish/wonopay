@@ -1,0 +1,11 @@
+**/node_modules
+**/.next
+**/dist
+**/.data
+**/.env
+**/.env.*
+!**/.env.example
+**/*.tsbuildinfo
+**/*.sqlite*
+.git
+.DS_Store

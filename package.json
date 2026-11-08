@@ -1,0 +1,27 @@
+{
+  "name": "wono",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "examples/react-store",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "npm run build -w @wono/sdk && npm run build -w @wono/x402 && npm run build -w @wono/react && npm run build -w @wono/web",
+    "test": "npm test -w @wono/sdk && npm run build -w @wono/sdk && npm test -w @wono/x402 && npm test -w @wono/web",
+    "typecheck": "npm run typecheck -w @wono/sdk && npm run build -w @wono/sdk && npm run typecheck -w @wono/x402 && npm run typecheck -w @wono/react && npm run typecheck -w @wono/web",
+    "dev": "npm run build -w @wono/sdk && npm run dev -w @wono/web",
+    "probe": "npm run probe -w @wono/sdk --",
+    "store": "node examples/store/server.ts",
+    "store:react": "npm run build -w @wono/sdk && npm run build -w @wono/x402 && npm run build -w @wono/react && npm run build -w @wono/example-react-store && npm run start -w @wono/example-react-store"
+  },
+  "overrides": {
+    "rpc-websockets": {
+      "uuid": "11.1.1"
+    }
+  }
+}
