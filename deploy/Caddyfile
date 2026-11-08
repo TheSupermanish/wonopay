@@ -1,0 +1,9 @@
+{$WONO_HOST} {
+	encode gzip
+	reverse_proxy web:3080
+}
+
+{$STORE_HOST} {
+	encode gzip
+	reverse_proxy store:3091
+}

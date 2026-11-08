@@ -1,0 +1,33 @@
+# Runs on the server next to deploy/Caddyfile and a root-only .env (never committed):
+#   WONO_HOST=wono-demo.uksouth.cloudapp.azure.com
+#   STORE_HOST=store.<public-ip>.sslip.io
+#   WONO_AURORA_API_KEY=...        WONO_API_KEY=wono_sk_... (the demo store's merchant key)
+services:
+  web:
+    image: wono-web
+    restart: unless-stopped
+    environment:
+      WONO_PUBLIC_URL: https://${WONO_HOST}
+      WONO_AURORA_API_KEY: ${WONO_AURORA_API_KEY}
+      WONO_SOLANA_FEE_PAYER_SECRET: ${WONO_SOLANA_FEE_PAYER_SECRET:-}
+    volumes:
+      - wono-data:/data
+  store:
+    image: wono-store
+    restart: unless-stopped
+    environment:
+      WONO_URL: https://${WONO_HOST}
+      WONO_API_KEY: ${WONO_API_KEY:-}
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      WONO_HOST: ${WONO_HOST}
+      STORE_HOST: ${STORE_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+volumes:
+  wono-data:
+  caddy-data:
