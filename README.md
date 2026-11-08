@@ -72,7 +72,7 @@ AI agents and APIs can charge per call over HTTP 402 with `@wono/x402`.
 ```mermaid
 flowchart LR
   subgraph Merchant site
-    S[Store page] -->|"&lt;Pay&gt; / WonoCheckout"| M[Wono modal iframe]
+    S[Store page] -->|Pay button / WonoCheckout| M[Wono modal iframe]
   end
   M -->|connect, balances, quotes| W[Wono app on Vercel]
   W -->|quote per token, bound to recipient, amount, deadline| A[Aurora Intents]
