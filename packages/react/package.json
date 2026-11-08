@@ -1,0 +1,31 @@
+{
+  "name": "@wono/react",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Wono checkout for React: a pay modal, or a keyless pay button for any Solana wallet.",
+  "homepage": "https://wono.fi",
+  "license": "UNLICENSED",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@wono/sdk": "0.2.0"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "typescript": "^5.9.3"
+  }
+}
