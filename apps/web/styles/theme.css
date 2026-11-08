@@ -176,8 +176,8 @@
 
   /* Text */
   --color-text-primary:         var(--color-neutral-950);
-  --color-text-secondary:       var(--color-neutral-500);
-  --color-text-tertiary:        var(--color-neutral-400);
+  --color-text-secondary:       var(--color-neutral-600);
+  --color-text-tertiary:        var(--color-neutral-500);
   --color-text-disabled:        var(--color-neutral-300);
   --color-text-disabled-danger: var(--color-red-300);
   --color-text-placeholder:     var(--color-neutral-400);
@@ -427,8 +427,9 @@
   --color-foreground-full:            var(--color-neutral-700);
   --color-foreground-icon-primary:    var(--color-neutral-50);
   --color-foreground-icon-hover:      var(--color-white);
+  --color-foreground-icon-secondary:  var(--color-neutral-400);
   --color-foreground-icon-error:      var(--color-red-400);
-  --color-foreground-icon-tertiary:   var(--color-neutral-600);
+  --color-foreground-icon-tertiary:   var(--color-neutral-500);
   --color-foreground-icon-quaternary: var(--color-neutral-700);
   --color-foreground-icon-disabled:   var(--color-neutral-800);
   --color-foreground-disabled:        var(--color-neutral-700);
@@ -438,8 +439,9 @@
   --color-button-primary-disabled-foreground: var(--color-neutral-500);
 
   /* Text */
-  --color-text-primary:  var(--color-neutral-50);
-  --color-text-tertiary: var(--color-neutral-600);
+  --color-text-primary:   var(--color-neutral-50);
+  --color-text-secondary: var(--color-neutral-300);
+  --color-text-tertiary:  var(--color-neutral-400);
   --color-text-disabled: var(--color-neutral-800);
   --color-text-error-primary: var(--color-red-400);
   --color-text-destructive: color-mix(in srgb, var(--color-red-500) 80%, var(--color-neutral-500));

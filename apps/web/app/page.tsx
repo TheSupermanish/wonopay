@@ -17,14 +17,14 @@ import { currentMerchant } from "@/lib/server/auth.ts";
 
 const STEPS: { title: string; body: string }[] = [
   { title: "Create an invoice", body: "Set the amount in USDC." },
-  { title: "Share the link", body: "Your customer pays from any wallet, with any token." },
+  { title: "Share the link", body: "Customers choose supported tokens and combine their balances." },
   { title: "Get USDC", body: "It lands in your Solana wallet." },
 ];
 
 const FEATURES: { icon: typeof RiLockLine; title: string; body: string }[] = [
-  { icon: RiStackLine, title: "Any token, any chain", body: `SOL, ETH, USDT and more across ${SOURCE_CHAINS.length} chains. Customers can even split one payment.` },
-  { icon: RiWallet3Line, title: "Straight to your wallet", body: "No custody. Funds go from their wallet to yours." },
-  { icon: RiShieldCheckLine, title: "Paid means paid", body: "Every payment is confirmed on Solana before it counts." },
+  { icon: RiStackLine, title: "One bill. Multiple tokens.", body: `Combine supported balances across ${SOURCE_CHAINS.length} chains. Transfers from one Solana wallet share one signature.` },
+  { icon: RiWallet3Line, title: "Straight to your wallet", body: "Receive native USDC in your Solana wallet. Wono never holds your funds." },
+  { icon: RiShieldCheckLine, title: "Verified on Solana", body: "An invoice is paid only after finalized USDC credit is verified on-chain." },
 ];
 
 const SETTLEMENT = { symbol: "USDC", blockchain: "sol", chainName: "Solana" };
@@ -55,16 +55,16 @@ export default async function Home() {
             Settles native USDC on Solana
           </span>
           <h1 className="max-w-3xl text-display-4-semibold text-balance sm:text-display-2-semibold text-text-primary">
-            Get paid in USDC. Customers pay with anything.
+            Scattered balances. One checkout.
           </h1>
           <p className="max-w-2xl text-title-3-medium text-balance text-text-secondary">
-            Customers pay from any wallet on {SOURCE_CHAINS.length} chains. You receive USDC on Solana.
+            Customers combine supported token balances to pay one invoice. Merchants receive USDC on Solana.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2">
-            <ButtonLink href={signedIn ? "/dashboard/invoices/new" : "/signup"} trailingIcon={RiArrowRightLine}>
-              {signedIn ? "Create an invoice" : "Start accepting payments"}
+            <ButtonLink href="https://wonopay-store.vercel.app" trailingIcon={RiArrowRightLine}>
+              Try the live checkout
             </ButtonLink>
-            <ButtonLink href="#how" variant="secondary">How it works</ButtonLink>
+            <ButtonLink href="https://youtu.be/1nxeOwq1Cv8" target="_blank" rel="noreferrer" variant="secondary">Watch the demo</ButtonLink>
           </div>
           <RouteDiagram />
         </section>

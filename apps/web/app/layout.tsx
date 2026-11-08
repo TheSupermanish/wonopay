@@ -5,9 +5,15 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono-source" });
 
+const SITE_TITLE = "Wono — scattered balances, one checkout";
+const SITE_DESCRIPTION = "Combine supported token balances across Solana and EVM chains to pay one invoice. Merchants receive native USDC in their own Solana wallet.";
+
 export const metadata: Metadata = {
-  title: { default: "Wono", template: "%s · Wono" },
-  description: "Cross-chain checkout that settles USDC on Solana.",
+  metadataBase: new URL("https://wonopay.vercel.app"),
+  title: { default: SITE_TITLE, template: "%s · Wono" },
+  description: SITE_DESCRIPTION,
+  openGraph: { title: SITE_TITLE, description: SITE_DESCRIPTION, type: "website" },
+  twitter: { card: "summary", title: SITE_TITLE, description: SITE_DESCRIPTION },
 };
 
 // Applies the stored or system theme before paint so dark mode never flashes.
